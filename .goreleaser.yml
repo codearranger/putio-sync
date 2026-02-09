@@ -20,6 +20,7 @@ builds:
     goarch:
       - 386
       - amd64
+      - arm64
     env:
       - CGO_ENABLED=0
 archives:
@@ -41,7 +42,7 @@ changelog:
 brews:
   - repository:
       owner: putdotio
-      name: homebrew-putio-sync
+      name: putio-sync
     directory: Formula
     homepage:  https://github.com/putdotio/putio-sync
     description: Put.io folder sync app
