@@ -102,9 +102,11 @@ func Sync(ctx context.Context, config Config) error {
 
 func syncOnce(ctx context.Context) error {
 	var err error
-	token, client, err = auth.Authenticate(ctx, httpClient, defaultTimeout, cfg.Username, cfg.Password)
-	if err != nil {
-		return err
+	if client == nil {
+		token, client, err = auth.Authenticate(ctx, httpClient, defaultTimeout, cfg.Username, cfg.Password)
+		if err != nil {
+			return err
+		}
 	}
 	err = ensureRoots(ctx)
 	if err != nil {

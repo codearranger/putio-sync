@@ -149,7 +149,25 @@ func (d *downloadJob) Run(ctx context.Context) error {
 
 	d.state.Status = statusSynced
 	d.state.LocalInode = in
-	return d.state.Write()
+	err = d.state.Write()
+	if err != nil {
+		return err
+	}
+
+	if cfg.DeleteRemoteAfterDownload {
+		log.Infof("Deleting remote file after download: %q", d.remoteFile.RelPath())
+		err = client.Files.Delete(ctx, d.remoteFile.PutioFile().ID)
+		if err != nil {
+			return err
+		}
+		err = d.state.Delete()
+		if err != nil {
+			return err
+		}
+		deleteEmptyRemoteParents(ctx, d.remoteFile.PutioFile().ParentID)
+	}
+
+	return nil
 }
 
 func (d *downloadJob) openRemote(ctx context.Context, offset int64) (rc io.ReadCloser, err error) {
@@ -174,6 +192,41 @@ func (d *downloadJob) openRemote(ctx context.Context, offset int64) (rc io.ReadC
 	}
 	rc = resp.Body
 	return
+}
+
+// deleteEmptyRemoteParents walks up from parentID, deleting each folder if
+// it is empty, stopping at the sync root folder.
+func deleteEmptyRemoteParents(ctx context.Context, parentID int64) {
+	for parentID != remoteFolderID {
+		listCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+		children, _, err := client.Files.List(listCtx, parentID)
+		cancel()
+		if err != nil {
+			log.Warningf("Cannot list remote folder %d: %v", parentID, err)
+			return
+		}
+		if len(children) > 0 {
+			return
+		}
+		// Folder is empty — get its parent before deleting
+		getCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+		folder, err := client.Files.Get(getCtx, parentID)
+		cancel()
+		if err != nil {
+			log.Warningf("Cannot get remote folder %d: %v", parentID, err)
+			return
+		}
+		nextParent := folder.ParentID
+		log.Infof("Deleting empty remote folder: %d", parentID)
+		delCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
+		err = client.Files.Delete(delCtx, parentID)
+		cancel()
+		if err != nil {
+			log.Warningf("Cannot delete empty remote folder %d: %v", parentID, err)
+			return
+		}
+		parentID = nextParent
+	}
 }
 
 type timerResetWriter struct {

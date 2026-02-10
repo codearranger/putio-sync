@@ -53,6 +53,9 @@ func syncFresh(sf *syncFile) iJob {
 	switch {
 	case sf.local != nil && sf.remote == nil:
 		// File present only on local side. Copy to the remote side.
+		if cfg.DeleteRemoteAfterDownload {
+			return nil
+		}
 		if sf.local.Info().IsDir() {
 			return &createRemoteFolderJob{
 				relpath: sf.relpath,
@@ -144,6 +147,12 @@ func syncWithState(sf *syncFile, filesByRemoteID map[int64]*syncFile, filesByIno
 			// This is the most common case that is executed most because once all files are in sync no operations will be done later.
 			return nil
 		case sf.local != nil && sf.remote == nil:
+			if cfg.DeleteRemoteAfterDownload {
+				// Remote was intentionally deleted after download; just clean up stale state
+				return []iJob{&deleteStateJob{
+					state: *sf.state,
+				}}
+			}
 			// File missing in remote side, could be deleted or moved elsewhere
 			target, ok := filesByRemoteID[sf.state.RemoteID]
 			if ok { // nolint: nestif

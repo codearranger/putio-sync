@@ -43,6 +43,8 @@ type Config struct {
 	Server string
 	// Set log level to debug.
 	Debug bool
+	// Delete remote files after successful download.
+	DeleteRemoteAfterDownload bool
 }
 
 func (c *Config) validate() error {
