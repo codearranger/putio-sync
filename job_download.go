@@ -12,6 +12,7 @@ import (
 	"github.com/cenkalti/log"
 	"github.com/putdotio/putio-sync/v2/internal/inode"
 	"github.com/putdotio/putio-sync/v2/internal/progress"
+	"github.com/putdotio/putio-sync/v2/internal/updates"
 )
 
 type downloadJob struct {
@@ -63,8 +64,11 @@ func (d *downloadJob) tryResume() io.WriteCloser {
 }
 
 func (d *downloadJob) Run(ctx context.Context) error {
-	fileWatcher := notifier.WatchFile(ctx, d.remoteFile.PutioFile().ID)
-	defer fileWatcher.Stop()
+	var fileWatcher *updates.FileWatcher
+	if !cfg.DeleteRemoteAfterDownload {
+		fileWatcher = notifier.WatchFile(ctx, d.remoteFile.PutioFile().ID)
+		defer fileWatcher.Stop()
+	}
 
 	wc := d.tryResume()
 	if wc == nil {
@@ -90,7 +94,12 @@ func (d *downloadJob) Run(ctx context.Context) error {
 
 	remaining := d.state.Size - d.state.Offset
 	if remaining > 0 { // nolint: nestif
-		ctx, cancel := context.WithCancel(fileWatcher.Context())
+		var cancel context.CancelFunc
+		if fileWatcher != nil {
+			ctx, cancel = context.WithCancel(fileWatcher.Context())
+		} else {
+			ctx, cancel = context.WithCancel(ctx)
+		}
 		defer cancel()
 
 		rc, err := d.openRemote(ctx, d.state.Offset)
@@ -120,10 +129,12 @@ func (d *downloadJob) Run(ctx context.Context) error {
 			return err
 		}
 
-		modified := fileWatcher.Stop()
-		if modified {
-			log.Warningln("File modified while downloading")
-			return nil
+		if fileWatcher != nil {
+			modified := fileWatcher.Stop()
+			if modified {
+				log.Warningln("File modified while downloading")
+				return nil
+			}
 		}
 
 		if copyErr != nil {
